@@ -1,0 +1,24 @@
+# Output trascrizioni e file scaricati
+/out/
+/work/
+*.wav
+*.mp3
+*.m4a
+*.srt
+*.vtt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+out_*/
+
+# Segreti / config locale
+.env
+
+# Cache modelli (opzionale)
+.cache/
