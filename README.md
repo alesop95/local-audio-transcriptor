@@ -14,6 +14,7 @@ Strumento **locale e cross-platform (Windows + Linux)** per trasformare audio in
 | Comando | Cosa fa |
 |---|---|
 | `file` / `youtube` / `playlist` | Trascrive un file locale / un video / un'intera playlist |
+| `stats` | Panoramica trascrizioni: durata, parole, lingua, speaker |
 | `index` / `search` | Indicizza (SQLite FTS5) e cerca passaggi con timestamp |
 | `ask` | Q&A in linguaggio naturale sulle trascrizioni (RAG), con citazioni |
 | `summarize` / `digest` | Note strutturate per-file / sintesi consolidata dell'intero corpus |
@@ -191,6 +192,7 @@ src/transcriptor/
   outputs.py    writer txt/srt/vtt/json
   pipeline.py   orchestrazione sorgente -> audio -> engine -> output
   summarize.py  sintesi LLM per-file + consolidata (Ollama/OpenAI-compat)
+  stats.py      statistiche trascrizioni (durata/parole/lingua/speaker)
   search.py     indice full-text SQLite FTS5 + ricerca
   rag.py        Q&A (retrieval FTS5 + generazione LLM con citazioni)
   translate.py  traduzione offline (argos-translate)

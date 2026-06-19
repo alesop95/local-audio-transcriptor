@@ -75,3 +75,26 @@ def test_rag_fts_query_drops_stopwords():
     q = _to_fts_query("Come funziona il voice cloning?")
     assert '"voice"' in q and '"cloning"' in q
     assert "come" not in q.lower().replace('"', "")
+
+
+def test_collect_stats(tmp_path):
+    import json
+
+    from transcriptor.stats import collect_stats, fmt_duration
+
+    doc = {
+        "language": "en",
+        "segments": [
+            {"start": 0.0, "end": 3.0, "text": "one two three", "speaker": "SPEAKER_00"},
+            {"start": 3.0, "end": 65.0, "text": "four five", "speaker": "SPEAKER_01"},
+        ],
+    }
+    (tmp_path / "001 - lezione.json").write_text(json.dumps(doc), encoding="utf-8")
+    stats = collect_stats(tmp_path)
+    assert len(stats) == 1
+    st = stats[0]
+    assert st.words == 5
+    assert st.segments == 2
+    assert st.duration == 65.0
+    assert st.speakers == 2
+    assert fmt_duration(65.0) == "00:01:05"

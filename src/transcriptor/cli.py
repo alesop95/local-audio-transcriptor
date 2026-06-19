@@ -246,6 +246,37 @@ def digest(
 
 
 @app.command()
+def stats(folder: Path = typer.Argument(Path("out"), help="Cartella con i .json da analizzare.")):
+    """Panoramica delle trascrizioni: durata, parole, lingua, speaker (per file e totali)."""
+    from .stats import collect_stats, fmt_duration
+
+    items = collect_stats(folder)
+    if not items:
+        console.print("[yellow]Nessuna trascrizione .json trovata.[/]")
+        raise typer.Exit(code=1)
+
+    table = Table(title=f"Statistiche: {len(items)} trascrizioni")
+    table.add_column("#", justify="right")
+    table.add_column("Sorgente")
+    table.add_column("Lingua")
+    table.add_column("Durata", justify="right")
+    table.add_column("Parole", justify="right")
+    table.add_column("Segm.", justify="right")
+    table.add_column("Speaker", justify="right")
+
+    tot_words = tot_dur = 0
+    for i, s in enumerate(items, start=1):
+        tot_words += s.words
+        tot_dur += s.duration
+        src = s.source if len(s.source) <= 48 else s.source[:45] + "..."
+        table.add_row(str(i), src, s.language or "?", fmt_duration(s.duration),
+                      f"{s.words:,}", str(s.segments), str(s.speakers) if s.speakers else "-")
+    table.add_section()
+    table.add_row("", "[bold]TOTALE[/]", "", f"[bold]{fmt_duration(tot_dur)}[/]", f"[bold]{tot_words:,}[/]", "", "")
+    console.print(table)
+
+
+@app.command()
 def index(folder: Path = typer.Argument(Path("out"), help="Cartella con i .json da indicizzare.")):
     """Costruisce l'indice full-text (SQLite FTS5) delle trascrizioni."""
     from .search import build_index
