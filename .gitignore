@@ -22,3 +22,7 @@ out_*/
 
 # Cache modelli (opzionale)
 .cache/
+
+# Claude standard privato
+CLAUDE.local.md
+.claude/settings.local.json
