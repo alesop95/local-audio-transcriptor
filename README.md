@@ -125,7 +125,7 @@ transcribe digest out/        # -> out/_PLAYLIST_DIGEST.md
 ## Ricerca e Q&A sul materiale
 
 ```bash
-# Indicizza (FTS5) e cerca passaggi con timestamp — offline, nessuna dipendenza extra
+# Indicizza (FTS5) e cerca passaggi con timestamp, offline, nessuna dipendenza extra
 transcribe index out/
 transcribe search "voice cloning"
 # -> 003 - How Voice Cloning Works @ 00:00:17 ...
@@ -163,7 +163,7 @@ La playlist *Text-to-Speech & Voice Cloning Course* (6 video) può essere trascr
 per ottenere il testo da usare come materiale di ricerca.
 
 > **Nota verificata**: nonostante titolo/descrizione in italiano, l'audio dei video è in **inglese**.
-> Lascia quindi l'**autodetect** della lingua (niente `--language`) — forzare la lingua sbagliata
+> Lascia quindi l'**autodetect** della lingua (niente `--language`). Forzare la lingua sbagliata
 > manda Whisper in loop di allucinazioni. Usa un modello `small`/`medium` per una buona qualità.
 
 ```bash
@@ -206,15 +206,15 @@ Extra di installazione: `.[asr]` (trascrizione), `.[gui]` (interfaccia), `.[tran
 
 Progetti open-source di riferimento studiati per estendere il tool:
 
-- [awesome-whisper](https://github.com/sindresorhus/awesome-whisper) — indice dell'ecosistema Whisper.
-- [Whishper](https://github.com/pluja/whishper) — web UI 100% locale con editor sottotitoli (riferimento GUI).
-- [ownscribe](https://github.com/paberr/ownscribe) — trascrizione + summary LLM (Ollama/LM Studio).
-- [Ollama-Transcriber](https://github.com/chumphrey-cmd/Ollama-Transcriber) — Whisper + Ollama.
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) / [WhisperX](https://github.com/m-bain/whisperX) — motori.
+- [awesome-whisper](https://github.com/sindresorhus/awesome-whisper): indice dell'ecosistema Whisper.
+- [Whishper](https://github.com/pluja/whishper): web UI 100% locale con editor sottotitoli (riferimento GUI).
+- [ownscribe](https://github.com/paberr/ownscribe): trascrizione + summary LLM (Ollama/LM Studio).
+- [Ollama-Transcriber](https://github.com/chumphrey-cmd/Ollama-Transcriber): Whisper + Ollama.
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) / [WhisperX](https://github.com/m-bain/whisperX): motori.
 
 Completato:
 - ✅ Trascrizione file/YouTube/playlist con allineamento e diarizzazione
-- ✅ GUI Gradio (`transcribe gui`) — tab File / YouTube / Playlist
+- ✅ GUI Gradio (`transcribe gui`): tab File / YouTube / Playlist
 - ✅ Packaging: `scripts/install.{ps1,sh}` (install pulita via `uv tool`) + `uv build`
 - ✅ Sintesi LLM (per-file e consolidata), ricerca full-text (FTS5), Q&A (RAG)
 - ✅ Traduzione offline (argos-translate), VAD Silero anti-allucinazioni
