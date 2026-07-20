@@ -136,6 +136,50 @@ def file(
 
 
 @app.command()
+def folder(
+    path: Path = typer.Argument(..., help="Cartella con file audio/video locali da trascrivere."),
+    model: str = ModelOpt,
+    language: Optional[str] = LangOpt,
+    device: Optional[str] = DeviceOpt,
+    diarize: bool = DiarizeOpt,
+    formats: str = FormatsOpt,
+    out: Path = OutOpt,
+    min_speakers: Optional[int] = MinSpkOpt,
+    max_speakers: Optional[int] = MaxSpkOpt,
+    summarize: bool = SummarizeOpt,
+    vad: str = VadOpt,
+    skip_existing: bool = typer.Option(
+        True, "--skip-existing/--no-skip-existing",
+        help="Salta i file il cui output esiste già in --out (riprendibile).",
+    ),
+):
+    """Trascrive tutti i file audio/video di una cartella (non ricorsivo)."""
+    from .sources.local import resolve_folder
+
+    opts = _common_opts(model, language, device, diarize, formats, out, min_speakers, max_speakers, summarize, vad)
+    items = resolve_folder(path)
+    if not items:
+        console.print(f"[yellow]Nessun file audio/video trovato in {path}.[/]")
+        raise typer.Exit(code=1)
+
+    if skip_existing:
+        primary_fmt = opts.formats[0] if opts.formats else "json"
+        pending = []
+        skipped = 0
+        for item in items:
+            out_path = out / f"{item.output_stem()}.{primary_fmt}"
+            if out_path.exists():
+                skipped += 1
+            else:
+                pending.append(item)
+        if skipped:
+            console.print(f"[dim]{skipped} file già trascritti, saltati.[/]")
+        items = pending
+
+    _run_items(items, opts)
+
+
+@app.command()
 def youtube(
     url: str = typer.Argument(..., help="URL di un video YouTube."),
     model: str = ModelOpt,
