@@ -34,6 +34,8 @@ class TranscribeOptions:
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "llama3.1"
     llm_api_key: str | None = None
+    llm_num_ctx: int | None = None
+    llm_ollama_native: bool = False
 
 
 @dataclass

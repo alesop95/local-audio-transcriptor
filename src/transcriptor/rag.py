@@ -43,6 +43,8 @@ def ask(
     base_url: str,
     model: str,
     api_key: str | None = None,
+    num_ctx: int | None = None,
+    ollama_native: bool = False,
     k: int = 12,
 ) -> tuple[str, list[Hit]]:
     """Risponde a `question` usando le trascrizioni in `folder`. Ritorna (risposta, fonti)."""
@@ -52,5 +54,8 @@ def ask(
 
     context = "\n".join(f"[{h.location()}] {h.text or h.snippet}" for h in hits)
     user = f"ESTRATTI:\n{context}\n\nDOMANDA: {question}"
-    answer = _chat(RAG_SYSTEM_PROMPT, user, base_url=base_url, model=model, api_key=api_key)
+    answer = _chat(
+        RAG_SYSTEM_PROMPT, user, base_url=base_url, model=model, api_key=api_key,
+        num_ctx=num_ctx, ollama_native=ollama_native,
+    )
     return answer, hits

@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "llama3.1"
     llm_api_key: str | None = None  # "ollama" per Ollama; la vera chiave per OpenAI
+    # Finestra di contesto (token) da richiedere al modello. None = non specificata (comportamento
+    # di default del server). Su Ollama il default runtime e' spesso molto piu' piccolo del massimo
+    # supportato dal modello: con input lunghi (es. digest di molte trascrizioni) va alzata esplicitamente.
+    llm_num_ctx: int | None = None
+    # Se True, chiama l'endpoint nativo Ollama (/api/chat) invece del layer OpenAI-compatibile
+    # (/v1/chat/completions). Verificato empiricamente: su alcune versioni di Ollama il layer
+    # OpenAI-compatibile NON rispetta num_ctx e tronca silenziosamente gli input lunghi, mentre
+    # l'endpoint nativo lo rispetta correttamente. Da attivare solo se il backend e' Ollama
+    # (non e' compatibile con un vero endpoint OpenAI/LM Studio/vLLM).
+    llm_ollama_native: bool = False
 
     def resolved_hf_token(self) -> str | None:
         import os

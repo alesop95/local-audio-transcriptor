@@ -52,6 +52,8 @@ def _common_opts(
         llm_base_url=settings.llm_base_url,
         llm_model=settings.llm_model,
         llm_api_key=settings.llm_api_key,
+        llm_num_ctx=settings.llm_num_ctx,
+        llm_ollama_native=settings.llm_ollama_native,
     )
 
 
@@ -83,6 +85,8 @@ def _summarize_written(written, opts):
                 base_url=opts.llm_base_url,
                 model=opts.llm_model,
                 api_key=opts.llm_api_key,
+                num_ctx=opts.llm_num_ctx,
+                ollama_native=opts.llm_ollama_native,
             )
             console.print(f"  [green]+[/] {md} [dim](sintesi)[/]")
         except LLMError as exc:
@@ -239,6 +243,7 @@ def summarize(
     path: Path = typer.Argument(..., help="File .txt o cartella di trascrizioni da riassumere."),
     model: str = typer.Option(None, "--llm-model", help="Modello LLM (default da config: llama3.1)."),
     base_url: str = typer.Option(None, "--llm-url", help="Endpoint OpenAI-compatibile (default Ollama)."),
+    num_ctx: int = typer.Option(None, "--llm-num-ctx", help="Finestra di contesto in token (default da config)."),
 ):
     """Genera note strutturate (Markdown) dai .txt usando un LLM locale (Ollama) o OpenAI-compatibile."""
     from .summarize import LLMError, summarize_file
@@ -246,6 +251,8 @@ def summarize(
     base = base_url or settings.llm_base_url
     mdl = model or settings.llm_model
     key = settings.llm_api_key
+    ctx = num_ctx if num_ctx is not None else settings.llm_num_ctx
+    native = settings.llm_ollama_native
 
     if path.is_dir():
         targets = sorted(p for p in path.glob("*.txt") if not p.name.endswith(".summary.txt"))
@@ -259,7 +266,7 @@ def summarize(
     for p in targets:
         console.print(f"  {p.name}")
         try:
-            md = summarize_file(p, base_url=base, model=mdl, api_key=key)
+            md = summarize_file(p, base_url=base, model=mdl, api_key=key, num_ctx=ctx, ollama_native=native)
             console.print(f"  [green]+[/] {md}")
         except LLMError as exc:
             console.print(f"  [red]Errore:[/] {exc}")
@@ -270,19 +277,24 @@ def digest(
     folder: Path = typer.Argument(Path("out"), help="Cartella con le trascrizioni .txt."),
     model: str = typer.Option(None, "--llm-model", help="Modello LLM (default da config)."),
     base_url: str = typer.Option(None, "--llm-url", help="Endpoint OpenAI-compatibile (default Ollama)."),
+    num_ctx: int = typer.Option(None, "--llm-num-ctx", help="Finestra di contesto in token (default da config)."),
 ):
     """Sintesi consolidata: un unico documento Markdown che collega tutte le trascrizioni."""
     from .summarize import LLMError, make_digest
 
     base = base_url or settings.llm_base_url
     mdl = model or settings.llm_model
+    ctx = num_ctx if num_ctx is not None else settings.llm_num_ctx
     console.print(f"[cyan]Sintesi consolidata via[/] {mdl} @ {base}")
 
     def _progress(i, total, name):
         console.print(f"  [{i}/{total}] {name}")
 
     try:
-        out = make_digest(folder, base_url=base, model=mdl, api_key=settings.llm_api_key, on_progress=_progress)
+        out = make_digest(
+            folder, base_url=base, model=mdl, api_key=settings.llm_api_key, num_ctx=ctx,
+            ollama_native=settings.llm_ollama_native, on_progress=_progress,
+        )
     except LLMError as exc:
         console.print(f"[red]Errore:[/] {exc}")
         raise typer.Exit(code=1)
@@ -353,6 +365,7 @@ def ask(
     folder: Path = typer.Option(Path("out"), "--folder", help="Cartella delle trascrizioni."),
     llm_model: str = typer.Option(None, "--llm-model", help="Modello LLM (default da config)."),
     llm_url: str = typer.Option(None, "--llm-url", help="Endpoint OpenAI-compatibile (default Ollama)."),
+    llm_num_ctx: int = typer.Option(None, "--llm-num-ctx", help="Finestra di contesto in token (default da config)."),
 ):
     """RAG Q&A: risponde a una domanda usando le trascrizioni, citando le fonti."""
     from .rag import ask as run_ask
@@ -365,6 +378,8 @@ def ask(
             base_url=llm_url or settings.llm_base_url,
             model=llm_model or settings.llm_model,
             api_key=settings.llm_api_key,
+            num_ctx=llm_num_ctx if llm_num_ctx is not None else settings.llm_num_ctx,
+            ollama_native=settings.llm_ollama_native,
         )
     except LLMError as exc:
         console.print(f"[red]Errore:[/] {exc}")

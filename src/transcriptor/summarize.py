@@ -50,19 +50,33 @@ def _chat(
     base_url: str,
     model: str,
     api_key: str | None,
+    num_ctx: int | None = None,
+    ollama_native: bool = False,
     timeout: int = 600,
 ) -> str:
-    """Chiamata a un endpoint chat-completions OpenAI-compatibile. Ritorna il contenuto."""
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-        ],
-        "temperature": 0.2,
-        "stream": False,
-    }
-    url = base_url.rstrip("/") + "/chat/completions"
+    """Chiamata a un endpoint di chat LLM. Ritorna il contenuto.
+
+    Di default usa il layer chat-completions OpenAI-compatibile (funziona con Ollama, LM Studio,
+    vLLM, OpenAI). Con `ollama_native=True` chiama invece l'endpoint nativo Ollama (/api/chat):
+    verificato che alcune versioni di Ollama non rispettano `num_ctx` sul layer OpenAI-compatibile
+    e troncano silenziosamente gli input lunghi, mentre l'endpoint nativo lo rispetta.
+    """
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    payload = {"model": model, "messages": messages, "temperature": 0.2, "stream": False}
+    if num_ctx is not None:
+        payload["options"] = {"num_ctx": num_ctx}
+
+    base = base_url.rstrip("/")
+    if ollama_native:
+        if base.endswith("/v1"):
+            base = base[: -len("/v1")]
+        url = base + "/api/chat"
+    else:
+        url = base + "/chat/completions"
+
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -79,6 +93,8 @@ def _chat(
         ) from exc
 
     try:
+        if ollama_native:
+            return body["message"]["content"].strip()
         return body["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError) as exc:  # pragma: no cover
         raise LLMError(f"Risposta LLM inattesa: {body}") from exc
@@ -90,6 +106,8 @@ def summarize_text(
     base_url: str,
     model: str,
     api_key: str | None = None,
+    num_ctx: int | None = None,
+    ollama_native: bool = False,
     system_prompt: str = DEFAULT_SYSTEM_PROMPT,
     max_chars: int = 48000,
     timeout: int = 600,
@@ -99,7 +117,10 @@ def summarize_text(
         raise LLMError("Trascrizione vuota: niente da riassumere.")
     # Tronca testi molto lunghi per restare nel contesto del modello (strategia semplice v1).
     content = text if len(text) <= max_chars else text[:max_chars] + "\n[...troncato...]"
-    return _chat(system_prompt, content, base_url=base_url, model=model, api_key=api_key, timeout=timeout)
+    return _chat(
+        system_prompt, content, base_url=base_url, model=model, api_key=api_key,
+        num_ctx=num_ctx, ollama_native=ollama_native, timeout=timeout,
+    )
 
 
 def consolidate_summaries(
@@ -108,13 +129,18 @@ def consolidate_summaries(
     base_url: str,
     model: str,
     api_key: str | None = None,
+    num_ctx: int | None = None,
+    ollama_native: bool = False,
     timeout: int = 600,
 ) -> str:
     """Sintesi consolidata da una lista di (titolo, sintesi_markdown)."""
     if not parts:
         raise LLMError("Nessuna sintesi da consolidare.")
     joined = "\n\n".join(f"## {title}\n{summary}" for title, summary in parts)
-    return _chat(DIGEST_SYSTEM_PROMPT, joined, base_url=base_url, model=model, api_key=api_key, timeout=timeout)
+    return _chat(
+        DIGEST_SYSTEM_PROMPT, joined, base_url=base_url, model=model, api_key=api_key,
+        num_ctx=num_ctx, ollama_native=ollama_native, timeout=timeout,
+    )
 
 
 def summarize_file(
@@ -123,11 +149,15 @@ def summarize_file(
     base_url: str,
     model: str,
     api_key: str | None = None,
+    num_ctx: int | None = None,
+    ollama_native: bool = False,
 ) -> Path:
     """Riassume un file .txt e scrive '<nome>.summary.md' accanto. Ritorna il percorso creato."""
     txt_path = Path(txt_path)
     text = txt_path.read_text(encoding="utf-8")
-    summary = summarize_text(text, base_url=base_url, model=model, api_key=api_key)
+    summary = summarize_text(
+        text, base_url=base_url, model=model, api_key=api_key, num_ctx=num_ctx, ollama_native=ollama_native
+    )
     out_path = txt_path.with_suffix(".summary.md")
     out_path.write_text(summary + "\n", encoding="utf-8")
     return out_path
@@ -145,6 +175,8 @@ def make_digest(
     base_url: str,
     model: str,
     api_key: str | None = None,
+    num_ctx: int | None = None,
+    ollama_native: bool = False,
     out_name: str = "_PLAYLIST_DIGEST.md",
     on_progress=None,
 ) -> Path:
@@ -161,11 +193,21 @@ def make_digest(
     for i, f in enumerate(files, start=1):
         if on_progress:
             on_progress(i, len(files), f.name)
-        text = f.read_text(encoding="utf-8")
-        summary = summarize_text(text, base_url=base_url, model=model, api_key=api_key)
+        existing_summary = f.with_suffix(".summary.md")
+        if existing_summary.exists():
+            # Riusa la sintesi già calcolata (es. da 'transcribe file --summarize') invece di
+            # richiamare l'LLM: più veloce e più stabile del rigenerarla ogni volta da zero.
+            summary = existing_summary.read_text(encoding="utf-8")
+        else:
+            text = f.read_text(encoding="utf-8")
+            summary = summarize_text(
+                text, base_url=base_url, model=model, api_key=api_key, num_ctx=num_ctx, ollama_native=ollama_native
+            )
         parts.append((f.stem, summary))
 
-    digest = consolidate_summaries(parts, base_url=base_url, model=model, api_key=api_key)
+    digest = consolidate_summaries(
+        parts, base_url=base_url, model=model, api_key=api_key, num_ctx=num_ctx, ollama_native=ollama_native
+    )
     out_path = Path(folder) / out_name
     out_path.write_text(digest + "\n", encoding="utf-8")
     return out_path
