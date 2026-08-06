@@ -1,7 +1,6 @@
 # Local Audio Transcriptor
 
-Strumento **locale e cross-platform (Windows + Linux)** per trasformare audio in conoscenza:
-**trascrive → cerca → interroga → traduce → riassume**, tutto offline.
+Strumento **locale e cross-platform (Windows + Linux)** per trasformare audio in conoscenza: **trascrive → cerca → interroga → traduce → riassume**, tutto offline.
 
 - Motore: [WhisperX](https://github.com/m-bain/whisperX) (backend faster-whisper / CTranslate2)
 - Sorgenti: file locali e [YouTube](https://github.com/yt-dlp/yt-dlp) (video/playlist); ffmpeg incluso (`imageio-ffmpeg`, nessuna installazione manuale)
@@ -31,8 +30,7 @@ Richiede Python 3.10–3.12. Consigliato [uv](https://github.com/astral-sh/uv).
 
 ### Installazione pulita (consigliata)
 
-Installa `transcribe` come **comando globale isolato** (via `uv tool`), senza toccare il Python
-di sistema. Gli script installano anche `uv` se manca.
+Installa `transcribe` come **comando globale isolato** (via `uv tool`), senza toccare il Python di sistema. Gli script installano anche `uv` se manca.
 
 ```powershell
 # Windows
@@ -43,8 +41,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 bash scripts/install.sh
 ```
 
-Dopo l'installazione il comando `transcribe` è disponibile ovunque. Verifica con `transcribe doctor`.
-Per disinstallare: `uv tool uninstall local-audio-transcriptor`.
+Dopo l'installazione il comando `transcribe` è disponibile ovunque. Verifica con `transcribe doctor`. Per disinstallare: `uv tool uninstall local-audio-transcriptor`.
 
 ### Installazione da wheel
 
@@ -61,9 +58,7 @@ uv venv --python 3.11
 uv pip install -e ".[asr,gui]"   # base + trascrizione + GUI
 ```
 
-> **GPU NVIDIA**: per l'accelerazione CUDA installa il `torch` corretto per la tua versione di CUDA
-> seguendo https://pytorch.org/get-started/locally/ prima di `".[asr]"`. Senza GPU il tool usa
-> automaticamente la CPU (più lento ma funziona ovunque).
+> **GPU NVIDIA**: per l'accelerazione CUDA installa il `torch` corretto per la tua versione di CUDA seguendo https://pytorch.org/get-started/locally/ prima di `".[asr]"`. Senza GPU il tool usa automaticamente la CPU (più lento ma funziona ovunque).
 
 Verifica l'ambiente:
 
@@ -103,9 +98,7 @@ Le trascrizioni vengono salvate in `out/`, i download temporanei in `work/`.
 
 ## Summarizzazione (note di ricerca via LLM)
 
-Trasforma le trascrizioni in **note strutturate** (titolo, sintesi, punti chiave, glossario,
-domande aperte) usando un LLM **locale** via [Ollama](https://ollama.com) o qualsiasi endpoint
-OpenAI-compatibile (LM Studio, vLLM, OpenAI).
+Trasforma le trascrizioni in **note strutturate** (titolo, sintesi, punti chiave, glossario, domande aperte) usando un LLM **locale** via [Ollama](https://ollama.com) o qualsiasi endpoint OpenAI-compatibile (LM Studio, vLLM, OpenAI).
 
 ```bash
 # 1) Avvia un LLM locale
@@ -136,18 +129,14 @@ transcribe ask "Come funziona il voice cloning?"
 
 ## Traduzione offline
 
-Traduce le trascrizioni mantenendo i timestamp, 100% offline con
-[argos-translate](https://github.com/argosopentech/argos-translate)
-(`uv pip install -e ".[translate]"`).
+Traduce le trascrizioni mantenendo i timestamp, 100% offline con [argos-translate](https://github.com/argosopentech/argos-translate) (`uv pip install -e ".[translate]"`).
 
 ```bash
 transcribe translate "out/003 - How Voice Cloning Works_ Explained EASILY.json" --to it
 transcribe translate out/ --to it --bilingual    # tutta la cartella, testo orig.+tradotto
 ```
 
-Configurabile via env / `.env`:
-`TRANSCRIBE_LLM_BASE_URL` (default `http://localhost:11434/v1`),
-`TRANSCRIBE_LLM_MODEL` (default `llama3.1`), `TRANSCRIBE_LLM_API_KEY`.
+Configurabile via env / `.env`: `TRANSCRIBE_LLM_BASE_URL` (default `http://localhost:11434/v1`), `TRANSCRIBE_LLM_MODEL` (default `llama3.1`), `TRANSCRIBE_LLM_API_KEY`.
 
 ## Diarizzazione (chi parla)
 
@@ -159,12 +148,9 @@ Configurabile via env / `.env`:
 
 ## Caso d'uso: estrarre la playlist di riferimento
 
-La playlist *Text-to-Speech & Voice Cloning Course* (6 video) può essere trascritta in blocco
-per ottenere il testo da usare come materiale di ricerca.
+La playlist *Text-to-Speech & Voice Cloning Course* (6 video) può essere trascritta in blocco per ottenere il testo da usare come materiale di ricerca.
 
-> **Nota verificata**: nonostante titolo/descrizione in italiano, l'audio dei video è in **inglese**.
-> Lascia quindi l'**autodetect** della lingua (niente `--language`). Forzare la lingua sbagliata
-> manda Whisper in loop di allucinazioni. Usa un modello `small`/`medium` per una buona qualità.
+> **Nota verificata**: nonostante titolo/descrizione in italiano, l'audio dei video è in **inglese**. Lascia quindi l'**autodetect** della lingua (niente `--language`). Forzare la lingua sbagliata manda Whisper in loop di allucinazioni. Usa un modello `small`/`medium` per una buona qualità.
 
 ```bash
 transcribe playlist "https://www.youtube.com/playlist?list=PL-wATfeyAMNorsfMFg0ISfD0rPDpMHA4R" \
@@ -220,10 +206,8 @@ Completato:
 - ✅ Traduzione offline (argos-translate), VAD Silero anti-allucinazioni
 - ✅ CI GitHub Actions (test su Linux + Windows)
 
-Idee future: retrieval semantico (embeddings) per il Q&A, export PDF/EPUB (pandoc),
-TTS delle sintesi (Piper/Coqui), modalità server (API), esportazione Obsidian/Notion.
+Idee future: retrieval semantico (embeddings) per il Q&A, export PDF/EPUB (pandoc), TTS delle sintesi (Piper/Coqui), modalità server (API), esportazione Obsidian/Notion.
 
 ## Note legali
 
-Scarica/trascrivi contenuti YouTube solo per uso personale e di ricerca, nel rispetto dei
-Termini di servizio della piattaforma e del diritto d'autore.
+Scarica/trascrivi contenuti YouTube solo per uso personale e di ricerca, nel rispetto dei Termini di servizio della piattaforma e del diritto d'autore.
