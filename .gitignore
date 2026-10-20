@@ -1,11 +1,30 @@
-# Output trascrizioni e file scaricati
+# Output trascrizioni e file scaricati.
+# Il perimetro e' volutamente largo: nessun contenuto trascritto, in nessun formato e in
+# nessuna cartella, deve poter entrare nel repository, che e' pubblico. Le estensioni che
+# servono al progetto come sorgenti versionate non esistono: i materiali stanno fuori.
 /out/
 /work/
+out_*/
 *.wav
 *.mp3
 *.m4a
+*.flac
+*.ogg
+*.opus
+*.aac
+*.mp4
+*.webm
+*.mkv
+*.mov
+*.avi
 *.srt
 *.vtt
+*.sbv
+*.summary.md
+_PLAYLIST_DIGEST.md
+*.db
+*.sqlite
+*.sqlite3
 
 # Python
 __pycache__/
@@ -15,7 +34,6 @@ venv/
 *.egg-info/
 build/
 dist/
-out_*/
 
 # Segreti / config locale
 .env

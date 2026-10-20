@@ -1,0 +1,5 @@
+# File tracciati che contengono un'impronta da sottotitolo ma non contenuto trascritto.
+# Una riga per percorso, relativo alla radice, con il motivo accanto dopo un cancelletto.
+# Si aggiunge una voce solo dopo aver guardato il file: un'eccezione non verificata vale
+# quanto non avere il controllo. Strumento: tools/check-niente-trascritto.py
+tests/test_outputs.py  # marcatori costruiti a mano nella prova del formato SRT, nessun parlato reale
