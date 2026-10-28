@@ -199,9 +199,12 @@ $controlli = @(
     @{ n = "lint-strumenti.py";       a = @(); solobundle = $true },
     @{ n = "test-tipografia.py";      a = @(); solobundle = $true },
     @{ n = "test-documenti-personali.py"; a = @(); solobundle = $true },
+    # Dal 2026-10-21: nessun identificativo personale nei file che il template porta nei progetti.
+    @{ n = "test-identita-personali.py"; a = @(); solobundle = $true },
     # Dal 2026-10-20: il controllo delle fonti a monte e i segni della retrospettiva.
     @{ n = "fonti-a-monte.py";        a = @("--autotest"); solobundle = $true },
     @{ n = "retro-segnali.py";        a = @("--autotest"); solobundle = $true },
+    @{ n = "lint-cultura.py";         a = @("--autotest"); solobundle = $true },
     @{ n = "verifica-link-progetto.py"; a = @("--prova"); solobundle = $true }
 )
 
@@ -256,8 +259,8 @@ if ($python -and (Test-Path $lezioni)) {
     if ($righe.Count -gt 0) { Titolo "Lezioni per il template"; $righe | ForEach-Object { Write-Host "   $_" } }
 }
 
-# Le fonti a monte, dal 2026-10-20: nel template un repository citato e non censito ferma il
-# commit, cosi' registro e schede entrano insieme; nel progetto il censimento avvisa e basta.
+# Le fonti a monte, dal 2026-10-20: nel template una fonte non censita, senza filone, senza
+# motivo o mai verificata ferma il commit (dal 2026-10-21); nel progetto il censimento avvisa.
 $fonti = ".claude\templates\tools\fonti-a-monte.py"
 if ($python -and (Test-Path $fonti)) {
     $uscitaF = & $python $fonti censisci --check 2>&1
@@ -265,6 +268,17 @@ if ($python -and (Test-Path $fonti)) {
     $righeF = @($uscitaF | Where-Object { "$_".Trim() -and "$_" -notmatch '^censimento: 0 nuovi, 0 tolti' })
     if ($righeF.Count -gt 0) { Titolo "Fonti a monte"; $righeF | ForEach-Object { Write-Host "   $_" } }
     if ($codiceF -ne 0) { $falliti += "fonti-a-monte.py" }
+}
+
+# Le conversioni PowerShell che dipendono dalla cultura di sistema, dal 2026-10-20 (lezione di un
+# progetto istanziato): nel template fermano il commit, nel progetto avvisano.
+$cultura = ".claude\templates\tools\lint-cultura.py"
+if ($python -and (Test-Path $cultura)) {
+    $uscitaC = & $python $cultura . 2>&1
+    $codiceC = $LASTEXITCODE
+    $righeC = @($uscitaC | Where-Object { "$_".Trim() -and "$_" -notmatch '^lint-cultura: nessuna' })
+    if ($righeC.Count -gt 0) { Titolo "Cultura nelle conversioni"; $righeC | Select-Object -Last 12 | ForEach-Object { Write-Host "   $_" } }
+    if ($codiceC -ne 0) { $falliti += "lint-cultura.py" }
 }
 
 if ($falliti.Count -gt 0) {
@@ -301,6 +315,17 @@ if ($cambi.Count -gt 0) {
 
     & git add -A
     if ($LASTEXITCODE -ne 0) { Write-Host "Stage fallito: niente e' stato committato." -ForegroundColor Red; exit 1 }
+    # Dal 2026-10-21: nessun identificativo personale nei file in stage ne' nell'identita' del commit,
+    # in qualunque progetto. Se ne trova uno, toglie lo stage e si ferma prima del commit.
+    $identita = Trova "test-identita-personali.py"
+    if ($identita -and $python) {
+        & $python $identita --stage | ForEach-Object { Write-Host "   $_" }
+        if ($LASTEXITCODE -ne 0) {
+            & git reset -q
+            Write-Host "Commit fermato: dati personali nel commit. Niente e' stato committato." -ForegroundColor Red
+            exit 1
+        }
+    }
     & git commit -m $Messaggio
     if ($LASTEXITCODE -ne 0) { Write-Host "Commit rifiutato (hook o errore): correggere e rilanciare." -ForegroundColor Red; exit 1 }
     if (Test-Path $fileMsg) { Remove-Item $fileMsg -Force }
@@ -320,24 +345,28 @@ if ($NoPush) {
     Nota "nessun commit sul ramo: niente da pushare"
 } else {
     # Destinazione esplicita: un upstream diverso da origin non deve deviare la chiusura.
-    # Un push caduto sulla rete non e' un push rifiutato, e la differenza conta:
-    # il 2026-10-13, su due tornate di chiusura, dieci push sono caduti su timeout
-    # SSH verso GitHub e ogni volta bastava rilanciare. La ripetizione sta qui
-    # invece che nelle dita di chi chiude.
+    # Un timeout SSH o un rifiuto remoto transitorio possono far fallire il push.
+    # La chiusura ritenta fino a tre volte e si ferma se il remoto resta indietro.
     $attese = @(5, 15)
     for ($t = 1; $t -le 3; $t++) {
         & git push -u origin "HEAD:refs/heads/$ramo"
         if ($LASTEXITCODE -eq 0) { break }
         if ($t -eq 3) { Write-Host "Push fallito: l'impronta non si registra finche' il remoto non e' allineato." -ForegroundColor Red; exit 1 }
-        Nota ("push caduto, ritento fra {0} secondi (tentativo {1} di 3)" -f $attese[$t - 1], ($t + 1))
+        Nota ("push non riuscito, ritento fra {0} secondi (tentativo {1} di 3)" -f $attese[$t - 1], ($t + 1))
         Start-Sleep -Seconds $attese[$t - 1]
     }
     $locale = (& git rev-parse HEAD)
-    $refRemota = (& git ls-remote --exit-code origin "refs/heads/$ramo")
-    if ($LASTEXITCODE -ne 0 -or -not $refRemota) { Ko "verifica del ramo remoto fallita"; exit 1 }
-    $suRemoto = ($refRemota -split '\s+')[0]
-    if ($locale -ne $suRemoto) { Ko "HEAD $locale diverso dal remoto $suRemoto"; exit 1 }
-    Ok "HEAD e remoto coincidono su '$ramo' ($($locale.Substring(0,7)))"
+    # Un remoto puo' avere piu' URL di push (osservato il 2026-10-21: un progetto spinge su due
+    # repository con un solo 'git push'). ls-remote su 'origin' legge solo l'URL di fetch: si
+    # verifica ogni URL di push, altrimenti il secondo puo' restare indietro senza che si veda.
+    $urlPush = @(& git remote get-url --push --all origin)
+    foreach ($u in $urlPush) {
+        $refRemota = (& git ls-remote --exit-code $u "refs/heads/$ramo")
+        if ($LASTEXITCODE -ne 0 -or -not $refRemota) { Ko "verifica del ramo remoto fallita su $u"; exit 1 }
+        $suRemoto = ($refRemota -split '\s+')[0]
+        if ($locale -ne $suRemoto) { Ko "HEAD $locale diverso dal remoto $suRemoto su $u"; exit 1 }
+    }
+    Ok "HEAD e remoto coincidono su '$ramo' ($($locale.Substring(0,7))), $($urlPush.Count) URL di push verificati"
 }
 
 # ---------------------------------------------------------------------------------------------

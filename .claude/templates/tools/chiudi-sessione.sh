@@ -104,8 +104,10 @@ check-catalogo.py|||1
 check-raggiungibilita.py|||1
 test-tipografia.py|||1
 test-documenti-personali.py|||1
+test-identita-personali.py|||1
 fonti-a-monte.py|--autotest||1
 retro-segnali.py|--autotest||1
+lint-cultura.py|--autotest||1
 verifica-link-progetto.py|--prova||1"
 
 falliti=""
@@ -132,14 +134,23 @@ if [ -n "$python" ] && [ -f .claude/templates/tools/lezioni-template.py ]; then
     [ $bundle = 1 ] && lez=$(printf '%s\n' "$lez" | tail -n 3)
     if [ -n "$lez" ]; then titolo "Lezioni per il template"; printf '%s\n' "$lez" | sed 's/^/   /'; fi
 fi
-# Le fonti a monte, dal 2026-10-20: nel template un repository citato e non censito ferma il
-# commit; nel progetto il censimento avvisa e basta.
+# Le fonti a monte, dal 2026-10-20: nel template una fonte non censita, senza filone, senza motivo
+# o mai verificata ferma il commit (dal 2026-10-21); nel progetto il censimento avvisa e basta.
 if [ -n "$python" ] && [ -f .claude/templates/tools/fonti-a-monte.py ]; then
     cf=0
     fon=$("$python" .claude/templates/tools/fonti-a-monte.py censisci --check 2>&1) || cf=$?
     fon=$(printf '%s\n' "$fon" | grep -v '^[[:space:]]*$' | grep -v '^censimento: 0 nuovi, 0 tolti' || true)
     if [ -n "$fon" ]; then titolo "Fonti a monte"; printf '%s\n' "$fon" | sed 's/^/   /'; fi
     if [ "$cf" != 0 ]; then falliti="$falliti fonti-a-monte.py"; fi
+fi
+# Le conversioni PowerShell che dipendono dalla cultura di sistema, dal 2026-10-20: nel template
+# fermano il commit, nel progetto avvisano.
+if [ -n "$python" ] && [ -f .claude/templates/tools/lint-cultura.py ]; then
+    cc=0
+    cul=$("$python" .claude/templates/tools/lint-cultura.py . 2>&1) || cc=$?
+    cul=$(printf '%s\n' "$cul" | grep -v '^[[:space:]]*$' | grep -v '^lint-cultura: nessuna' | tail -n 12 || true)
+    if [ -n "$cul" ]; then titolo "Cultura nelle conversioni"; printf '%s\n' "$cul" | sed 's/^/   /'; fi
+    if [ "$cc" != 0 ]; then falliti="$falliti lint-cultura.py"; fi
 fi
 if [ -n "$falliti" ]; then printf '\nControlli falliti:%s. Mi fermo prima del commit.\n' "$falliti"; exit 1; fi
 [ $solo = 1 ] && { printf '\nControlli verdi.\n'; exit 0; }
@@ -166,6 +177,15 @@ if [ "$ncambi" != 0 ]; then
         case "$r" in s|si|y|yes) ;; *) echo "Annullato: niente e' stato committato."; exit 1 ;; esac
     fi
     git add -A || { echo "Stage fallito: niente e' stato committato."; exit 1; }
+    # Dal 2026-10-21: nessun identificativo personale nei file in stage ne' nell'identita' del commit.
+    if [ -n "$python" ] && identita="$(trova test-identita-personali.py)"; then
+        "$python" "$identita" --stage | sed 's/^/   /'
+        if [ "${PIPESTATUS[0]}" != 0 ]; then
+            git reset -q
+            echo "Commit fermato: dati personali nel commit. Niente e' stato committato."
+            exit 1
+        fi
+    fi
     git commit -m "$messaggio" || { echo "Commit rifiutato (hook o errore): correggere e rilanciare."; exit 1; }
     rm -f "$filemsg"
 fi
@@ -188,10 +208,19 @@ else
     done
     [ "$spinto" = "1" ] || { echo "Push fallito: l'impronta non si registra finche' il remoto non e' allineato."; exit 1; }
     locale="$(git rev-parse HEAD)"
-    remoto="$(git ls-remote --exit-code origin "refs/heads/$ramo")" || { ko "verifica del ramo remoto fallita"; exit 1; }
-    remoto="${remoto%%[[:space:]]*}"
-    [ "$locale" = "$remoto" ] || { ko "HEAD $locale diverso dal remoto $remoto"; exit 1; }
-    ok "HEAD e remoto coincidono su '$ramo' (${locale:0:7})"
+    # Un remoto puo' avere piu' URL di push (osservato il 2026-10-21): si verifica ognuno,
+    # perche' ls-remote su 'origin' legge solo l'URL di fetch.
+    n=0
+    while IFS= read -r u; do
+        [ -n "$u" ] || continue
+        remoto="$(git ls-remote --exit-code "$u" "refs/heads/$ramo")" || { ko "verifica del ramo remoto fallita su $u"; exit 1; }
+        remoto="${remoto%%[[:space:]]*}"
+        [ "$locale" = "$remoto" ] || { ko "HEAD $locale diverso dal remoto $remoto su $u"; exit 1; }
+        n=$((n + 1))
+    done <<EOF_URL
+$(git remote get-url --push --all origin)
+EOF_URL
+    ok "HEAD e remoto coincidono su '$ramo' (${locale:0:7}), $n URL di push verificati"
 fi
 
 # Sul template, una modifica a .claude/ si propaga ai progetti solo con la passata di

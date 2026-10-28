@@ -68,6 +68,10 @@ Il tranello non riguarda la memoria in quanto memoria, ma ogni documento version
 
 Ne discende una regola di redazione che vale anche con un albero solo: un documento di stato dichiara sempre a quale commit e a quale branch si riferisce, e lo dichiara in testa e non in fondo. Le schede di `context/` lo fanno con il frontmatter di riconciliazione, lo snapshot `memory/index.md` con il blocco di stato che apre il file. La dichiarazione permette a chi legge di accorgersi in due secondi che sta leggendo la verità di un'altra branch, senza dover sapere in anticipo che il tranello esiste.
 
+## Più alberi moltiplicano anche la configurazione
+
+Lo stesso meccanismo della memoria colpisce la configurazione infrastrutturale, con conseguenze più immediate. In un progetto istanziato, con tre alberi su una macchina, una correzione di sicurezza al descrittore dei contenitori è atterrata in un albero e gli altri due hanno continuato a portare il valore vecchio: un comando ordinario di ricreazione lanciato da uno di quelli l'avrebbe annullata senza errori (lezione L-006, 2026-10-21). La configurazione infrastrutturale atterra quindi sul riferimento di rilascio e scende nei rami di lavoro, e si committa e si propaga nel giro in cui si fa: una correzione presente in un albero su tre è una correzione in attesa di essere annullata.
+
 ## Gli alberi degli agenti paralleli, che sono un caso diverso
 
 Sezione salita il 2026-10-19 da un progetto istanziato, dopo una finestra di lavoro autonomo in cui una dozzina di agenti ha lavorato in alberi propri e il lavoro è stato portato sul ramo con `git cherry-pick`. Questi alberi non sono ambienti, come quelli del resto della norma: vivono minuti o ore, e la memoria si scrive solo dall'agente principale. Hanno però quattro trappole proprie, ciascuna costata un giro.
@@ -79,3 +83,7 @@ Sezione salita il 2026-10-19 da un progetto istanziato, dopo una finestra di lav
 **Gli hash.** Un commit portato con `git cherry-pick` è un commit nuovo, con un hash diverso. La documentazione cita l'hash che il commit ha sul ramo di destinazione, non quello del ramo dell'agente, che sparisce con il ramo: nel caso osservato undici hash citati nel registro dei pendenti non esistevano più, e se n'è accorto un agente successivo cercandoli.
 
 **La rimozione.** `git worktree remove` può lasciare una cartella vuota trattenuta da un processo ancora aperto su di essa. Non è un albero e non ha un ramo: si toglie con una rimozione che rifiuti una cartella non vuota, per esempio `rmdir`, quando il processo è uscito.
+
+## Prima di cancellare un ramo o un albero, si legge la sua cartella
+
+Salita il 2026-10-28 da un progetto istanziato (L-019). Git cancella un ramo già unito senza avvisare, e la rimozione forzata di un albero di lavoro porta via anche ciò che non è mai stato committato: la storia non contiene il lavoro non salvato, quindi nessuna delle due operazioni può dirti che cosa stai perdendo. Nel caso osservato una pulizia dei rami stava per cancellare un albero che conteneva una modifica non salvata di settimane prima e un documento scritto lo stesso giorno da un'altra persona, e un secondo albero con uno script e una cartella mai committati. La prescrizione è in tre gesti: prima di cancellare si guarda lo stato della cartella di quell'albero, si archivia per copia tutto ciò che non è nella storia comprese le patch del ramo, e solo dopo si cancella. E un'unione che toccherebbe un albero dove un'altra persona ha lavoro in corso non si fa lì: si fa in un albero separato e si spinge, lasciando all'altro il prelievo quando gli torna comodo.

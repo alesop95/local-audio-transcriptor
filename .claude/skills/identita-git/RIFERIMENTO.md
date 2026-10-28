@@ -74,13 +74,17 @@ Resta buona una convenzione di nomi, purché sia offerta come convenzione e non 
 
 ## Protezione globale dal commit con identità sbagliata
 
-Una sola impostazione globale, da fare una volta per macchina, fa si che git rifiuti di committare in un repository dove non è stata impostata l'identità locale.
+La protezione contro il commit firmato con l'identità sbagliata è di due condizioni e non di una, e per anni questo riferimento ne ha dichiarata una sola, sbagliando. L'impostazione globale, da fare una volta per macchina, è questa.
 
 ```bash
 git config --global user.useConfigOnly true
 ```
 
-Con questa impostazione git non ripiega mai sull'email globale: se il repo non ha `user.email` locale, il commit viene rifiutato finché non lo si imposta esplicitamente. Questo elimina il commit accidentale con l'email di lavoro mentre si sviluppa con identità personale. Essendo una modifica globale, va eseguita solo dopo conferma dell'utente.
+Quello che fa davvero è vietare a git di *dedurre* un'identità da nome utente e nome host, non di leggerne una che qualcuno ha configurato. Ne segue la seconda condizione, che è quella che si dimentica: nel file di configurazione globale non deve esistere un blocco `[user]` con `name` o `email`. Se esiste, `useConfigOnly` non rifiuta niente, e il commit in un repository senza identità locale parte firmato con l'identità globale, in silenzio e senza nessun sintomo. Verificato in una sandbox il 2026-10-28, con `GIT_CONFIG_GLOBAL` puntato a un file finto: con il blocco globale presente e `useConfigOnly` a true il commit riesce e porta l'identità di ripiego; con lo stesso `useConfigOnly` e il blocco privo di nome ed email git risponde `Author identity unknown` e rifiuta.
+
+La forma generale vale oltre questo caso, ed è la ragione per cui la prescrizione cambia invece di limitarsi a una nota: una protezione il cui meccanismo è fallire in assenza di un valore viene disarmata da chiunque riempia quel posto, spesso per una ragione legittima e in un file diverso da quello dove la protezione è scritta. Il disarmo va nella direzione comoda, perché i commit continuano a funzionare. Una protezione così non si dichiara attiva perché l'impostazione è presente: si prova nella condizione che dovrebbe bloccare, e la prova si rifà su ogni macchina, perché ciò che la disarma è configurazione locale e non codice.
+
+Il controllo è `detect-ssh-profiles.py`, che legge le due condizioni insieme e dichiara la protezione attiva, disarmata o assente invece di stampare il solo valore dell'impostazione. Essendo una modifica globale, l'abilitazione va eseguita solo dopo conferma dell'utente, e con lei va guardato il blocco `[user]` globale: se contiene un'identità di ripiego, la protezione resta disarmata finché quel blocco non si svuota.
 
 ## Bootstrap di un repository nuovo
 
@@ -150,6 +154,18 @@ git push -u origin main
 ```
 
 Il rebase prende il commit già presente su GitHub, ad esempio il README generato alla creazione del repo, e vi colloca sotto il commit iniziale locale, producendo una storia lineare senza commit di merge e senza modificare alcun file di lavoro. Dalle volte successive il push e semplicemente `git push`.
+
+## Un remoto può spingere su più repository
+
+Un remoto può avere più URL di push, e allora un solo `git push origin` scrive su tutti, mentre `git ls-remote origin` e `git remote get-url origin` leggono soltanto l'URL di fetch. Ogni operazione che riguarda dove arriva il lavoro, cioè la verifica di un push, la verifica del remoto e soprattutto una riscrittura della storia, elenca prima gli URL con `git remote get-url --push --all origin` e gli altri remoti con `git remote -v`, e tratta ciascun repository che ne risulta. Il caso che l'ha insegnato, il 2026-10-21: un progetto spingeva sul repository aziendale e su quello di un collega, e la bonifica della storia aveva previsto solo il primo; `chiudi` verificava il push sul solo URL di fetch, e dal 2026-10-21 li verifica tutti.
+
+## Un'identità personale non entra mai in un file versionato
+
+Nome utente, email e alias del profilo personale non si scrivono in nessun file versionato: né in un progetto, né nel template, che è privato ma propaga regole, skill e pacchetti anche nei progetti aziendali. I valori concreti di una macchina, cioè quale alias porta a quale chiave e a quale identità, stanno nel `CLAUDE.local.md` del progetto, ignorato da git, oppure in `~/.ssh/config` e in `git config` locale, dove già vivono. Il caso che ha prodotto la regola, il 2026-10-21: fino al commit 74b6f6b il template aveva una regola versionata sulle identità di questa macchina con entrambi i profili, e l'allineamento l'aveva portata, committata e spinta, in undici repository aziendali, da cui la mail personale si è tolta solo riscrivendone la storia. Il presidio è `.claude/templates/tools/test-identita-personali.py`, che cerca nei file tracciati sotto `.claude/` del template ogni voce di un elenco locale non versionato, `_notes/allineamento/identita-personali.txt` oppure `~/.config/identita-personali.txt`, e fallisce anche quando l'elenco manca: `chiudi` lo lancia e ferma il commit del template, `allinea-tutti.ps1` lo lancia e non parte. In un repository aziendale vale inoltre `user.useConfigOnly`, qui sopra, anche sulle macchine remote: un'identità globale di ripiego, aziendale o no, non deve poter firmare un commit. La seconda barriera è nei progetti: `test-identita-personali.py --stage`, lanciato da `chiudi` fra lo stage e il commit e dal passo `.githooks/pre-commit.d/identita-personali` nei commit manuali, ferma un commit che contiene un identificativo personale o che verrebbe firmato con l'identità personale. Usa l'elenco della macchina, `~/.config/identita-personali.txt`, scritto come impronte sha256 e non in chiaro, con le righe `ambito:` che dicono quali repository sono aziendali; su una macchina nuova lo si installa prima di lavorare a un repository aziendale.
+
+## Dopo una riscrittura forzata della storia
+
+La riscrittura della storia condivisa non è finita quando è stata spinta: finché esiste una copia non riallineata, la prima che spinge riporta indietro tutto. Lo si è visto il 2026-10-21 nella bonifica dei repository aziendali, dove un ramo spinto da un collega dopo la copia, un ramo solo locale, due tag e i riferimenti di un secondo remoto trattenevano ancora la storia vecchia. Chi ha lavorato sulla storia precedente non spinge e non fonde le due storie: esporta il proprio lavoro come patch, poi confronta le due punte e non le storie, perché il confronto dice quali file la riscrittura ha cambiato nel contenuto di oggi; sposta il ramo sulla punta nuova senza toccare l'albero, riprende dalla punta nuova i file corretti e ricommitta i propri che non erano fra quelli (lezione L-010 di un progetto istanziato). Lo strumento di quella bonifica, che separa riscrittura, push con `--force-with-lease`, verifica su un clone nuovo, riallineamento delle copie e aggiornamento degli hash citati nella documentazione conservandone le fine riga, è la base da cui ripartire.
 
 ## Vincolo
 

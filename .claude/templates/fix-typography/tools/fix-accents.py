@@ -398,6 +398,16 @@ _AP = chr(39) + chr(0x2019)
 CANDIDATO_CODICE = re.compile(
     r"(?<![A-Za-z" + _AP + r"])([A-Za-z]+)[" + _AP + r"](?![A-Za-z])")
 
+# Una citazione fra apici singoli dentro una stringa, un docstring o un commento, aperta da
+# un apice che non segue una lettera. Il riconoscitore qui sopra guarda solo il carattere
+# prima della parola, quindi proteggeva 'tipo' ma non 'nessuna lingua': la seconda parola
+# della citazione non e' preceduta dall'apice, e il suo apice di chiusura diventava un
+# accento. Il 2026-10-20, in un progetto istanziato, f"{d['nessuna lingua']}" e' diventato
+# una stringa non terminata. Lo stesso valeva per il residuo: in 'meta' + accento l'apice
+# dopo la vocale accentata e' la chiusura, non un apostrofo di troppo. La citazione intera
+# quindi non si tocca.
+CITAZIONE_SINGOLA = re.compile(r"(?<![A-Za-z])[" + _AP + r"][^" + _AP + r"\n]*[" + _AP + r"]")
+
 STRINGA_DOPPIA = re.compile(r'"(?:[^"\\\n]|\\.)*"')
 DOCSTRING = re.compile(r'"""(?:.|\n)*?"""')
 
@@ -434,8 +444,16 @@ def converti_lista_bianca(testo, statistiche, residui, ambigui):
         residui[chiave] = residui.get(chiave, 0) + 1
         return m.group(0)
 
-    testo = CANDIDATO_CODICE.sub(sostituisci, testo)
-    return togli_residuo(testo, statistiche)
+    def converti(pezzo):
+        return togli_residuo(CANDIDATO_CODICE.sub(sostituisci, pezzo), statistiche)
+
+    pezzi, pos = [], 0
+    for m in CITAZIONE_SINGOLA.finditer(testo):
+        pezzi.append(converti(testo[pos:m.start()]))
+        pezzi.append(m.group(0))
+        pos = m.end()
+    pezzi.append(converti(testo[pos:]))
+    return "".join(pezzi)
 
 
 def converti_python(testo, statistiche, residui, ambigui):
@@ -479,6 +497,14 @@ def converti_python(testo, statistiche, residui, ambigui):
 
 # Se falso, i file sotto .claude/templates/ non si riscrivono: vedi la guardia in raccolta.
 MODELLI_AMMESSI = False
+
+# Le estensioni di codice sorgente, che lo strumento non riscrive: vedi la guardia in main e
+# quella in raccolta per il file passato per nome.
+SORGENTI = {".ts", ".tsx", ".js", ".jsx", ".py", ".java", ".c", ".h", ".cpp", ".cs",
+            ".go", ".rb", ".php", ".rs", ".swift", ".kt", ".sql", ".sh", ".ps1"}
+# Se vero, un sorgente passato per nome si accetta comunque; con SOLO_LETTURA non si scrive.
+ANCHE_SORGENTI = False
+SOLO_LETTURA = False
 
 
 def raccogli(percorsi, estensioni):
@@ -544,7 +570,11 @@ def raccogli(percorsi, estensioni):
 
     def escluso(percorso):
         rel = relativo(percorso)
-        return rel is not None and rel in esclusi
+        if rel is None:
+            return False
+        r = rel.replace(os.sep, "/")
+        # una riga che finisce con la barra esclude il sottoalbero, come in fix-dashes
+        return rel in esclusi or r in esclusi or any(p.endswith("/") and r.startswith(p) for p in esclusi)
 
     file = []
     for p in percorsi:
@@ -570,8 +600,18 @@ def raccogli(percorsi, estensioni):
                 # Il salto si dichiara invece di tacere: una protezione silenziosa sembra una
                 # svista a chi guarda l'uscita, ed e' cosi' che una guardia smette di esistere.
                 rel = relativo(ap)
-                print(f"escluso ({esclusi[rel]}): {rel}", file=sys.stderr)
+                print(f"escluso ({motivo_esclusione(esclusi, rel)}): {rel}", file=sys.stderr)
                 continue
+            # Un sorgente passato per nome non passa dal filtro delle estensioni, quindi la
+            # guardia di main sulle estensioni non lo vedeva: il 2026-10-20, in un progetto
+            # istanziato, una stringa Python che finiva con a e apostrofo ha perso la virgoletta
+            # di chiusura e il file non compilava piu'. Si rifiuta e si dice perche'.
+            est = os.path.splitext(ap)[1].lower()
+            if est in SORGENTI and not ANCHE_SORGENTI and not SOLO_LETTURA:
+                print(f"rifiutato, e' un sorgente ({est}): {p}. In una stringa fra apici singoli "
+                      "la correzione puo' mangiare la virgoletta di chiusura; --check ispeziona "
+                      "senza scrivere, --anche-sorgenti forza", file=sys.stderr)
+                sys.exit(2)
             if os.path.abspath(ap) != IO_STESSO and os.path.basename(ap) not in FAMIGLIA:
                 file.append(ap)
             continue
@@ -595,11 +635,18 @@ def raccogli(percorsi, estensioni):
                         continue
                     if escluso(completo):
                         rel = relativo(completo)
-                        print(f"escluso ({esclusi[rel]}): {rel}", file=sys.stderr)
+                        print(f"escluso ({motivo_esclusione(esclusi, rel)}): {rel}", file=sys.stderr)
                         continue
                     if os.path.abspath(completo) != IO_STESSO and n not in FAMIGLIA:
                         file.append(completo)
     return file
+
+
+def motivo_esclusione(esclusi, rel):
+    """Il motivo dichiarato per un file, o per la cartella esclusa che lo contiene."""
+    r = rel.replace(os.sep, "/")
+    return esclusi.get(rel) or esclusi.get(r) or next(
+        (m for p, m in esclusi.items() if p.endswith("/") and r.startswith(p)), "")
 
 
 def leggi_esclusioni():
@@ -636,7 +683,9 @@ def leggi_esclusioni():
             if not p or not motivo:
                 malformate.append(riga)
                 continue
-            esclusi[os.path.normpath(p)] = motivo
+            # una cartella intera si dichiara con la barra finale, che normpath toglierebbe
+            chiave = os.path.normpath(p).replace(os.sep, "/") + "/" if p.endswith("/") else os.path.normpath(p)
+            esclusi[chiave] = motivo
     return esclusi, malformate
 
 
@@ -700,6 +749,12 @@ def autotest():
         # e le due cose convivono sulla stessa riga
         ("# " + Q + "tipo" + Q + " e la modalita" + Q + " scelta",
          "# " + Q + "tipo" + Q + " e la modalit\u00e0 scelta"),
+        # una chiave di piu' parole dentro una f-string resta intera (lezione del 2026-10-20)
+        ("s = f" + DQ + "{d[" + Q + "nessuna lingua" + Q + "]} e" + Q + " qui" + DQ,
+         "s = f" + DQ + "{d[" + Q + "nessuna lingua" + Q + "]} \u00e8 qui" + DQ),
+        # e l'apice dopo una vocale accentata, se chiude una citazione, non e' un residuo
+        ("t = " + DQ + "la chiave " + Q + "met\u00e0" + Q + " resta" + DQ,
+         "t = " + DQ + "la chiave " + Q + "met\u00e0" + Q + " resta" + DQ),
     ]
     fallite = 0
     for ingresso, atteso in casi:
@@ -758,9 +813,13 @@ def main():
                     help="elenca solo le forme non in lista bianca")
     ap.add_argument("--ext", default=".md,.tex,.txt",
                     help="estensioni da trattare, separate da virgola")
+    ap.add_argument("--anche-sorgenti", action="store_true",
+                    help="accetta un file di codice sorgente passato per nome")
     args = ap.parse_args()
-    global MODELLI_AMMESSI
+    global MODELLI_AMMESSI, ANCHE_SORGENTI, SOLO_LETTURA
     MODELLI_AMMESSI = args.includi_modelli
+    ANCHE_SORGENTI = args.anche_sorgenti
+    SOLO_LETTURA = args.check or args.residui
 
     if args.autotest:
         return autotest()
@@ -789,8 +848,6 @@ def main():
     # L'errore era prevedibile e infatti e' stato previsto: chi lo ha lanciato aveva nominato il
     # rischio prima di eseguire e ha verificato subito con il compilatore. Il danno e' stato nullo
     # perche' il codice era committato, ma il presidio non puo' essere la prudenza di chi lancia.
-    SORGENTI = {".ts", ".tsx", ".js", ".jsx", ".py", ".java", ".c", ".h", ".cpp", ".cs",
-                ".go", ".rb", ".php", ".rs", ".swift", ".kt", ".sql", ".sh", ".ps1"}
     pericolose = sorted(estensioni & SORGENTI)
     if pericolose and not args.check:
         print("rifiutato: estensioni di codice sorgente richieste (%s)."

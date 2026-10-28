@@ -49,6 +49,9 @@ Esiti per file:
               con --rimuovi, si toglie l'origine
   RIMOSSO     il template lo ha tolto e la copia locale era intatta
   LOCALE      nel percorso gestito, mai esistito nel template: non si tocca
+  SCOLLEGATO  copia di un file del template sotto un nome che il template non ha
+              (tipicamente rinominata in fase di istanziazione): nessun
+              aggiornamento la raggiunge, e va ricollegata o accettata a mano
   INNESCO     solo con --innesco: righe di innesco delle skill con RIFERIMENTO.md
               che il CLAUDE.md non nomina ancora; con --applica si aggiungono
 
@@ -66,6 +69,9 @@ template fuori da SKILL_SISTEMA, e le guide istanziate sotto docs/<pacchetto>/
 da templates/<pacchetto>/. Per questi tre ultimi vale la stessa regola: si
 aggiorna ciò che il progetto ha già, non si installa ciò che non ha, perché
 quella scelta è del gate dei pacchetti e non dell'allineamento.
+Dove il progetto ha .githooks/pre-commit.d/, vi tiene anche i passi di sistema
+di templates/readme-sync/githooks/pre-commit.d/, come identita-personali, e li
+aggiunge se mancano: una barriera ai dati personali non si lascia a un'installazione a mano.
 Non tocca mai memory/, context/, settings: quelli descrivono il progetto, e il
 loro allineamento resta un lavoro di lettura. CLAUDE.md lo tocca soltanto con
 --innesco, e soltanto per aggiungere righe.
@@ -104,6 +110,11 @@ SKILL_SISTEMA = [
 ]
 IGNORA = {"__pycache__", ".pytest_cache"}
 CODICE = {".py", ".ps1", ".sh", ".js", ".mjs"}
+
+# Registri che il template genera e che i progetti leggono soltanto: la copia nel progetto
+# si riscrive sempre dalla testa invece di essere fusa, perche' una fusione su un file
+# generato produce un conflitto nuovo a ogni scrittura e nessuna informazione locale va persa.
+GENERATI = {".claude/templates/lezioni-recepite.json"}
 
 
 def git(repo: Path, *args: str, binario: bool = False):
@@ -531,6 +542,17 @@ def main():
             esiti.append(voce)
             return
         t = lf(leggi_blob(tpl, testa[tpl_rel]))
+        # Un registro che il template genera e che i progetti leggono soltanto non si fonde mai:
+        # diverge a ogni scrittura nel template, e una fusione a tre vie su un JSON lungo produce
+        # un conflitto che ricompare identico ogni volta, cioe' un avviso che smette di dire.
+        # Misurato il 2026-10-28: la copia di un progetto portava 210 righe in meno e la chiave di
+        # progetto anteriore a una rinomina di cartella, e il merge la dichiarava conflitto mentre
+        # l'azione giusta era prendere la testa. Qui la testa vince sempre.
+        if tpl_rel in GENERATI and dest.exists() and lf(dest.read_bytes()) != t:
+            voce["esito"], voce["_dati"] = "VECCHIO", t
+            voce["nota"] = "registro generato dal template: si riscrive dalla testa, non si fonde"
+            esiti.append(voce)
+            return
         if not dest.exists():
             voce["esito"], voce["_dati"] = "NUOVO", t
         else:
@@ -593,6 +615,15 @@ def main():
             voce = {"file": p, "template": dst}
             if blob_id(loc) in storici:
                 voce["esito"], voce["_dati"] = "SPOSTATO", t
+            elif RISOLTI.get(p, {}).get("testa") == testa[dst]:
+                # Stessa regola del passo 1: risolto a mano contro questa stessa testa, non
+                # c'e' niente di nuovo da decidere. Mancava qui, e una risoluzione registrata
+                # su un file che il template ha rinominato veniva scritta e poi mai guardata:
+                # il conflitto tornava identico a ogni passata, cioe' la registrazione non
+                # proteggeva. Osservato il 2026-10-28 su un progetto, due volte nello stesso
+                # giorno prima di capire che non era la risoluzione a scadere.
+                voce["esito"] = "ADATTATO"
+                voce["nota"] = f"risolto a mano il {RISOLTI[p].get('il', '?')}, testa invariata"
             else:
                 unito, n, perse, duplicate, ok, _ = fondi(tpl, storici, loc, t)
                 rp = righe_proprie(tpl, storici, loc, dst) if not ok else ([], False)
@@ -617,8 +648,35 @@ def main():
     per_nome: dict[str, list[str]] = {}
     for p in testa:
         parti = p.split("/")
-        if len(parti) >= 2 and parti[-2] == "tools" and p.startswith(".claude/templates/") and not set(parti) & IGNORA:
+        if set(parti) & IGNORA:
+            continue
+        # Uno strumento del template puo' vivere sotto un pacchetto oppure sotto la skill che lo
+        # usa: la copia istanziata in tools/ del progetto e' la stessa cosa nei due casi e va
+        # aggiornata allo stesso modo. Senza il secondo prefisso quella copia usciva come
+        # scollegata, con una nota che diceva il falso perche' il nome e' identico; era uno solo
+        # nel template, ma il buco era della stessa famiglia (misurato il 2026-10-28).
+        sotto_skill = len(parti) > 4 and parti[1] == "skills" and parti[-2] == "tools"
+        if not p.startswith(".claude/templates/") and not sotto_skill:
+            continue
+        if len(parti) >= 2 and parti[-2] == "tools":
             per_nome.setdefault(parti[-1], []).append(p)
+        # Non tutti gli strumenti di un pacchetto stanno sotto tools/: alcuni vivono nella
+        # radice del pacchetto, e le loro copie istanziate non si aggiornavano mai, senza
+        # che l'esito dell'allineamento le nominasse. Tre script in questo template erano
+        # in quel caso, e due copie di uno di essi erano rimaste senza l'opzione che attua
+        # la regola sui documenti personali, entrata nel template il 2026-10-07: cioe' la
+        # regola restava senza attuazione proprio nello strumento che deve attuarla
+        # (L-007 di un progetto istanziato, 2026-10-26). I file di valori d'esempio restano
+        # fuori: sono materiale da copiare e adattare, non codice da tenere allineato.
+        elif len(parti) == 4 and Path(parti[-1]).suffix in CODICE and ".esempio." not in parti[-1]:
+            per_nome.setdefault(parti[-1], []).append(p)
+    # I valori d'esempio di un pacchetto si copiano e si adattano per definizione: una copia
+    # diversa dall'originale e' il loro uso normale, non una copia scollegata da segnalare.
+    esempi_pacchetto = {p.split("/")[-1] for p in testa if ".esempio." in p.split("/")[-1]}
+    # Unione delle impronte mai viste nel template: serve a distinguere, fra le copie in
+    # tools/ che nessuna origine rivendica, quelle che vengono comunque dal template e
+    # vanno guardate da quelle del progetto, che sono la maggioranza e non sono notizia.
+    tutti_storici: set[str] = set().union(*blob.values()) if blob else set()
     for f in sorted((prj / "tools").glob("*")) if (prj / "tools").is_dir() else []:
         # solo codice: i file di dati istanziati (elenchi di esclusioni, voci di roadmap)
         # sono del progetto per costruzione, e fonderli con quelli del template li guasterebbe
@@ -634,6 +692,20 @@ def main():
             else:
                 esiti.append({"file": f"tools/{f.name}", "template": None, "esito": "CONFLITTO",
                               "nota": "origine ambigua: " + ", ".join(cand)})
+        elif (f.is_file() and f.suffix in CODICE and f.name not in esempi_pacchetto
+              and blob_id(lf(f.read_bytes())) in tutti_storici):
+            # Nessun file in testa al template porta questo nome, ma il contenuto e' un'impronta
+            # che il template ha avuto: la copia viene da qui e ha perso il collegamento, quindi
+            # nessun aggiornamento la raggiungera' mai e niente lo direbbe. Gli strumenti del
+            # progetto, che sono la maggioranza dei file in tools/, non hanno quell'impronta e
+            # restano fuori dal rapporto, perche' elencarli sarebbe rumore.
+            # Il filtro sul codice e' lo stesso del ramo qui sopra e per la stessa ragione: un
+            # elenco di esclusioni o un README istanziati divergono per costruzione, e un progetto
+            # che non li ha ancora toccati li ha ancora identici al template. Senza questo filtro
+            # la prima passata del 2026-10-28 li segnalava in sei progetti, cioe' produceva
+            # l'avviso su quasi ogni progetto che e' la forma in cui un avviso smette di dire.
+            esiti.append({"file": f"tools/{f.name}", "template": None, "esito": "SCOLLEGATO",
+                          "nota": "copia di un file del template sotto un altro nome: non si aggiorna"})
 
     # 4. skill opzionali istanziate sotto .claude/skills/ del progetto
     #
@@ -683,6 +755,14 @@ def main():
         src = f".claude/templates/{rel}"
         if src in testa:
             valuta(f"docs/{rel}", src, blob.get(src, set()))
+
+    # 5b. passi di sistema dell'hook pre-commit, dove il progetto ha .githooks/pre-commit.d/: dal
+    # 2026-10-21 il passo identita-personali deve arrivare in ogni progetto che esegue quei passi,
+    # perché una barriera ai dati personali che si installa a mano non si installa
+    base_passi = ".claude/templates/readme-sync/githooks/pre-commit.d/"
+    if (prj / ".githooks" / "pre-commit.d").is_dir():
+        for src in sorted(x for x in testa if x.startswith(base_passi)):
+            valuta(".githooks/pre-commit.d/" + src[len(base_passi):], src, blob.get(src, set()))
 
     # 6. file risolti a mano, su richiesta esplicita
     if a.risolto:
@@ -750,7 +830,7 @@ def main():
                 e["nota"] = f"{e['nota']}; {dove}" if e.get("nota") else dove
 
     # rapporto
-    ordine = ["CONFLITTO", "SUPERATO", "MERGE", "SPOSTATO", "RIMOSSO", "VECCHIO", "NUOVO", "INNESCO", "ADATTATO", "LOCALE", "UGUALE"]
+    ordine = ["CONFLITTO", "SUPERATO", "MERGE", "SPOSTATO", "RIMOSSO", "SCOLLEGATO", "VECCHIO", "NUOVO", "INNESCO", "ADATTATO", "LOCALE", "UGUALE"]
     conta = {k: sum(1 for e in esiti if e["esito"] == k) for k in ordine}
     for k in ordine:
         if k in ("UGUALE", "ADATTATO", "LOCALE"):
